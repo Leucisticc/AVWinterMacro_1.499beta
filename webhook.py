@@ -7,7 +7,7 @@ from typing import Any
 import requests
 
 
-webhook_url = "https://discord.com/api/webhooks/1334989751140225226/gaqC9xAx0D_j0gl_u_gLZ3iC07nmrwcw3_rDxbwjHTbcd450U9k5tfKQ79J8iqupX3y_"
+webhook_url = "YOUR_URL_HERE"
 WEBHOOK_MAX_RETRIES = 3
 WEBHOOK_TIMEOUT_SECONDS = 15
 
