@@ -294,7 +294,6 @@ def cid_farm():
     click(599, 461, delay=0.3)
     time.sleep(0.1)
     
-    avM.restart_match()
     session_start = datetime.now()
     total_runs = 0
     wins = 0
