@@ -305,7 +305,7 @@ def cid_farm():
         print(f"Total Runs: {total_runs}")
         wait_start()
         if USE_MOUNT:
-            time.sleep(2)
+            time.sleep(1)
             tap('v')
             click(VOTE_START_POS)
             time.sleep(0.5)
@@ -338,7 +338,7 @@ def cid_farm():
             time.sleep(0.3)
             click(ABILITY_POS)
             if MAKIMA_MEMORIA:
-                time.sleep(1.5)
+                time.sleep(0.5)
             else:
                 time.sleep(6)
             click(1026,696)
@@ -370,10 +370,10 @@ def cid_farm():
             click(CLOSE_POS)
             time.sleep(0.5)
             click(UNITS["skele"]["pos"], delay=0.3)
-            time.sleep(2)
+            time.sleep(1)
             click(ABILITY_POS)
-            time.sleep(0.8)
-            spam_chord_for_duration(duration=8, hold=0.02, gap=0.03)
+            time.sleep(1.8)
+            spam_chord_for_duration(duration=7, hold=0.02, gap=0.03)
             click(CLOSE_POS)
             time.sleep(0.3)
             click(UNITS["erza"]["pos"], delay=0.3)
