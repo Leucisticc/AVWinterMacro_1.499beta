@@ -34,6 +34,7 @@ UPDATE_OWNER = "Leucisticc"
 UPDATE_REPO = "AVWinterMacro_Beta"
 
 CHECK_LOOTBOX = False # Leave false for faster runs
+NAMI_PLACE_TIMEOUT_SECONDS = 50
 
 ROBLOX_PLACE_ID = 16146832113
 
@@ -72,6 +73,15 @@ def load_json_data():
 def save_json_data(data):
     with open(WE_Json, 'w') as f:
         json.dump(data, f, indent=4)
+
+def _to_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return default
 
 def reset_runtime_stats():
     """
@@ -160,7 +170,31 @@ else:
     print("Failed to find settings file. Closing in 10 seconds")
     time.sleep(10)
     sys.exit()
-    
+
+if not hasattr(Settings, "ENABLE_WEBHOOKS"):
+    Settings.ENABLE_WEBHOOKS = True
+    data = load_json_data() or {}
+    data["ENABLE_WEBHOOKS"] = True
+    save_json_data(data)
+else:
+    Settings.ENABLE_WEBHOOKS = _to_bool(Settings.ENABLE_WEBHOOKS, default=True)
+
+if not hasattr(Settings, "ENABLE_FAILURE_PING"):
+    Settings.ENABLE_FAILURE_PING = True
+    data = load_json_data() or {}
+    data["ENABLE_FAILURE_PING"] = True
+    save_json_data(data)
+else:
+    Settings.ENABLE_FAILURE_PING = _to_bool(Settings.ENABLE_FAILURE_PING, default=True)
+
+if not hasattr(Settings, "FAILURE_PING_TEXT"):
+    Settings.FAILURE_PING_TEXT = "@everyone"
+    data = load_json_data() or {}
+    data["FAILURE_PING_TEXT"] = "@everyone"
+    save_json_data(data)
+else:
+    Settings.FAILURE_PING_TEXT = str(Settings.FAILURE_PING_TEXT or "").strip()
+
 Settings.Units_Placeable.append("Doom")
 
 _prompt_update_if_outdated()
@@ -1141,7 +1175,64 @@ def on_failure():
         time.sleep(0.4)
     click(Settings.REPLAY_BUTTON_POS[0],Settings.REPLAY_BUTTON_POS[1],delay =0.1)
     click(750, 567, delay = 0.5)
-    
+
+def _record_failure_and_notify(reason: str = "Failure"):
+    stats = {}
+    try:
+        stats = load_json_data()
+        if stats is None:
+            stats = {}
+        stats.setdefault("num_runs", 0)
+        stats.setdefault("losses", 0)
+        stats.setdefault("wins", 0)
+        stats["num_runs"] += 1
+        stats["losses"] += 1
+        stats["runtime"] = f"{str((datetime.now() - start)).split('.')[0]}"
+        save_json_data(stats)
+    except Exception as e:
+        print(f"stats error: {e}")
+
+    if Settings.ENABLE_WEBHOOKS and Settings.ENABLE_FAILURE_PING:
+        try:
+            loss_img = _roblox_window_screenshot_for_webhook()
+            Thread(
+                target=webhook.send_webhook,
+                kwargs={
+                    "run_time": f"{str((datetime.now() - start)).split('.')[0]}",
+                    "num_runs": stats.get("num_runs"),
+                    "win": stats.get("wins"),
+                    "lose": stats.get("losses"),
+                    "task_name": f"Winter Event (Failed: {reason})",
+                    "img": loss_img,
+                    "enabled": Settings.ENABLE_WEBHOOKS,
+                    "alert_text": Settings.FAILURE_PING_TEXT,
+                },
+                daemon=True,
+            ).start()
+        except Exception as e:
+            print(f"[Webhook] Failure ping error: {e}")
+
+
+def _buy_and_place_nami_with_timeout(timeout_seconds: int = NAMI_PLACE_TIMEOUT_SECONDS) -> bool:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline and g_toggle:
+        if not bt.does_exist('Winter/Nami_hb.png', confidence=0.7, grayscale=False):
+            tap('e')
+            time.sleep(0.5)
+            continue
+
+        quick_rts()
+        place_unit('Nami', (755, 524))
+        tap('z')
+        click(607, 381, delay=0.1)
+        time.sleep(1)
+
+        # After successful placement, Nami should no longer be in hotbar.
+        if not bt.does_exist('Winter/Nami_hb.png', confidence=0.7, grayscale=False):
+            return True
+
+    return False
+
 
 def sell_kaguya(): # Sells kaguya (cant reset while domain is active)
     sold = False
@@ -1175,20 +1266,7 @@ def detect_loss():
 
         if loss_found:
             print("Found loss screen")
-
-            try:
-                new_Data = load_json_data()
-                if new_Data is None:
-                    new_Data = {}
-                new_Data.setdefault("num_runs", 0)
-                new_Data.setdefault("losses", 0)
-                new_Data.setdefault("wins", 0)
-                new_Data["num_runs"] += 1
-                new_Data["losses"] += 1
-                new_Data["runtime"] = f"{str((datetime.now() - start)).split('.')[0]}"
-                save_json_data(new_Data)
-            except Exception as e:
-                print(f"stats error: {e}")
+            _record_failure_and_notify(reason="Loss Screen")
 
             try:
                 on_failure()
@@ -1223,6 +1301,8 @@ def detect_loss():
 
         time.sleep(1)
 
+Thread(target=detect_loss, daemon=True).start()
+
 def _roblox_window_screenshot_for_webhook():
     """
     Capture only the Roblox window for webhook screenshots.
@@ -1247,22 +1327,26 @@ def main():
     startup_wins = int(startup_stats.get("wins", 0) or 0)
     startup_losses = int(startup_stats.get("losses", 0) or 0)
     # print(f"[Stats] Starting totals | Runs: {startup_total} | Wins: {startup_wins} | Losses: {startup_losses}")
-    try:
-        startup_img = _roblox_window_screenshot_for_webhook()
-        Thread(
-            target=webhook.send_webhook,
-            kwargs={
-                "run_time": "0:00:00",
-                "num_runs": startup_total,
-                "win": startup_wins,
-                "lose": startup_losses,
-                "task_name": "Winter Event (Started)",
-                "img": startup_img,
-            },
-            daemon=True,
-        ).start()
-    except Exception as e:
-        print(f"[Webhook] Startup webhook error: {e}")
+    if Settings.ENABLE_WEBHOOKS:
+        try:
+            startup_img = _roblox_window_screenshot_for_webhook()
+            Thread(
+                target=webhook.send_webhook,
+                kwargs={
+                    "run_time": "0:00:00",
+                    "num_runs": startup_total,
+                    "win": startup_wins,
+                    "lose": startup_losses,
+                    "task_name": "Winter Event (Started)",
+                    "img": startup_img,
+                    "enabled": Settings.ENABLE_WEBHOOKS,
+                },
+                daemon=True,
+            ).start()
+        except Exception as e:
+            print(f"[Webhook] Startup webhook error: {e}")
+    else:
+        print("[Webhook] Disabled by settings (ENABLE_WEBHOOKS=false)")
     session_runs = 0
     while True:
         if RUNS_BEFORE_REJOIN > 0:
@@ -1309,11 +1393,11 @@ def main():
                 quick_rts()
                 time.sleep(1.5)
                 got_mirko = True
-                # if bt.does_exist("Winter/Bunny_hb.png",confidence=0.7,grayscale=False):
-                #     print("Got mirko")
-                #     got_mirko = True
-                # else:
-                #     print("Didnt detect mirko, retrying purchase")
+                if bt.does_exist("Winter/Bunny_hb.png",confidence=0.7,grayscale=False):
+                    print("Got mirko")
+                    got_mirko = True
+                else:
+                    print("Didnt detect mirko, retrying purchase")
             click(835, 226, delay =0.1) # Start Match
                         
             
@@ -1330,11 +1414,11 @@ def main():
                 quick_rts()
                 time.sleep(1.5)
                 got_mirko_two = True
-                # if bt.does_exist("Winter/Bunny_hb.png",confidence=0.7,grayscale=False):
-                #     print("Got mirko")
-                #     got_mirko_two = True
-                # else:
-                #     print("Didnt detect mirko, retrying purchase")
+                if bt.does_exist("Winter/Bunny_hb.png",confidence=0.7,grayscale=False):
+                    print("Got mirko")
+                    got_mirko_two = True
+                else:
+                    print("Didnt detect mirko, retrying purchase")
             place_unit('Bunny', rabbit_pos[2], close=True)
             
             #Start farms - speedwagon
@@ -1399,23 +1483,29 @@ def main():
             place_unit("Tak", Settings.Unit_Positions.get("tak"))
             tap('z')
             time.sleep(0.5)
-            click(607, 381, delay =0.1)
+            click(607, 381, delay =1)
+            time.sleep(1)
             
             #DIR_NAMICARD
             if bt.does_exist("Winter/Nami_detect.png",confidence=0.8,grayscale=True):
+                print("Detected Nami.")
                 click_image_center("Winter/Nami_detect.png",confidence=0.8,grayscale=True,offset=(0,0))   
                 click(50,50,delay=0.1,right_click=True,dont_move=True)
             else:
                 click(Settings.CTM_NAMI_CARD[0], Settings.CTM_NAMI_CARD[1], delay =0.1, right_click=True) # Goes to nami's card
             time.sleep(4)
-            #Nami
-            while not bt.does_exist('Winter/Nami_hb.png', confidence=0.7, grayscale=False): # Buys nami's card
-                tap('e')
-                time.sleep(0.2)
-            quick_rts()
-            place_unit('Nami',(755, 524)) # Nami placement
-            tap('z')
-            click(607, 381, delay =0.1)
+            # Nami (timeout-safe): if not placed quickly, treat as failed run and restart.
+            if not _buy_and_place_nami_with_timeout():
+                print(f"[Nami] Failed to place within {NAMI_PLACE_TIMEOUT_SECONDS}s. Restarting run as failure.")
+                _record_failure_and_notify(reason=f"Nami Timeout ({NAMI_PLACE_TIMEOUT_SECONDS}s)")
+                match_restarted = False
+                while not match_restarted and g_toggle:
+                    print("[Restart] Nami timeout restart...")
+                    avM.restart_match()
+                    avM.restart_match()
+                    time.sleep(2)
+                    match_restarted = True
+                continue
 
             # Go to upgrader for fortune
             directions('4')
@@ -1535,9 +1625,71 @@ def main():
                     prevent_inf = 5
                     print("Getting Units")
                     quick_rts()
-                    time.sleep(3)
+                    time.sleep(2)
                     place_hotbar_units()
                     directions('3')
+                
+                if not ainzplaced:
+                    if Settings.Unit_Placements_Left['Ainz'] == 0: # Ainz thingy
+                        print("Ainz Setup")
+                        quick_rts()
+                        time.sleep(1)
+                        ainz_pos = Settings.Unit_Positions['Ainz']
+                        pos = Settings.Unit_Positions.get("Caloric_Unit")
+                        secure_select((ainz_pos[0]))
+                        time.sleep(0.5)
+                        tap('z')
+                        time.sleep(0.5)
+                        if Settings.USE_WD == True:
+                            ainz_setup(unit="world des")
+                        elif Settings.USE_DIO == True:
+                            ainz_setup(unit="god")
+                        elif USE_BUU:
+                            ainz_setup(unit="boo")
+                        else:
+                            ainz_setup(unit=Settings.USE_AINZ_UNIT)
+                        global AINZ_SPELLS
+                        if not AINZ_SPELLS:
+                            AINZ_SPELLS = True
+                        click(pos[0], pos[1], delay=0.67) # Place world destroyer
+                        time.sleep(0.5)
+                        while not pixel_matches_seen(607, 381, (255, 255, 255), tol=20, sample_half=2):
+                            if not g_toggle:
+                                break
+                            click(pos[0], pos[1], delay=0.67)
+                            time.sleep(0.5)
+
+                        time.sleep(1)
+                        if Settings.USE_DIO:
+                            ability_clicks = [(648, 448), (1010, 563), (1099, 309)]
+                            for p in ability_clicks:
+                                click(p[0], p[1], delay =0.1)
+                                time.sleep(1.2)
+                        if Settings.MAX_UPG_AINZ_PLACEMENT:
+                            tap('z')
+                        if Settings.MONARCH_AINZ_PLACEMENT:
+                            directions('5')
+                            buy_monarch()
+                            quick_rts()
+                            time.sleep(1)
+                            click(pos[0], pos[1], delay=0.67) 
+                        time.sleep(1)
+                        print("Placed ainz's unit")
+                        click(607, 381, delay =0.1)
+                        
+
+                        directions('5')
+                        buy_monarch()
+                        quick_rts()
+                        time.sleep(1)
+                        click(ainz_pos[0][0],ainz_pos[0][1],delay =0.1)
+                        time.sleep(1)
+                        ainzplaced = True
+                        # go gamble more son
+                        directions('3')
+                        
+                        
+                        
                 if not Erza_Upgraded:
                     print("Buffing Erza")
                     erza_buffer = Settings.Unit_Positions['Mage']
@@ -1625,70 +1777,6 @@ def main():
                             click(607, 381, delay =0.1)
                         Ben_Upgraded = True
                         # more gamble
-                        directions('3')
-                        
-                        
-                if not ainzplaced:
-                    if Settings.Unit_Placements_Left['Ainz'] == 0: # Ainz thingy
-                        print("Ainz Setup")
-                        ainzplaced = True
-                        quick_rts()
-                        time.sleep(1)
-                        ainz_pos = Settings.Unit_Positions['Ainz']
-                        pos = Settings.Unit_Positions.get("Caloric_Unit")
-                        secure_select((ainz_pos[0]))
-                        time.sleep(0.5)
-                        if Settings.USE_WD == True:
-                            ainz_setup(unit="world des")
-                        elif Settings.USE_DIO == True:
-                            ainz_setup(unit="god")
-                        elif USE_BUU:
-                            ainz_setup(unit="boo")
-                        else:
-                            ainz_setup(unit=Settings.USE_AINZ_UNIT)
-                        global AINZ_SPELLS
-                        if not AINZ_SPELLS:
-                            AINZ_SPELLS = True
-                        click(pos[0], pos[1], delay=0.67) # Place world destroyer
-                        time.sleep(0.5)
-                        while not pixel_matches_seen(607, 381, (255, 255, 255), tol=20, sample_half=2):
-                            if not g_toggle:
-                                break
-
-                            click(pos[0], pos[1], delay=0.67)
-                            time.sleep(0.5)
-
-                        time.sleep(1)
-                        if Settings.USE_DIO:
-                            ability_clicks = [(648, 448), (1010, 563), (1099, 309)]
-                            for p in ability_clicks:
-                                click(p[0], p[1], delay =0.1)
-                                time.sleep(1.2)
-                        if Settings.MAX_UPG_AINZ_PLACEMENT:
-                            tap('z')
-                        if Settings.MONARCH_AINZ_PLACEMENT:
-                            directions('5')
-                            buy_monarch()
-                            quick_rts()
-                            time.sleep(1)
-                            click(pos[0], pos[1], delay=0.67) 
-                        time.sleep(1)
-                        print("Placed ainz's unit")
-                        click(607, 381, delay =0.1)
-                        
-                        # Ainz auto upgrade + monarch
-                        secure_select((ainz_pos[0]))
-                        time.sleep(0.5)
-                        tap('z')
-                        time.sleep(0.5)
-                        click(607, 381, delay =0.1)
-                        directions('5')
-                        buy_monarch()
-                        quick_rts()
-                        time.sleep(1)
-                        click(ainz_pos[0][0],ainz_pos[0][1],delay =0.1)
-                        time.sleep(1)
-                        # go gamble more son
                         directions('3')
                 print("===============================")
                 is_done = True
@@ -1998,7 +2086,7 @@ def main():
                     time.sleep(2)
             session_runs += 1
             try:
-                    victory = _roblox_window_screenshot_for_webhook()
+                    victory = _roblox_window_screenshot_for_webhook() if Settings.ENABLE_WEBHOOKS else None
                     runtime = f"{datetime.now()-start_of_run}"
                     stats = load_json_data() or {}
                     stats.setdefault("num_runs", 0)
@@ -2019,6 +2107,7 @@ def main():
                                 "lose": stats.get("losses"),
                                 "task_name": "Winter Event",
                                 "img": victory,
+                                "enabled": Settings.ENABLE_WEBHOOKS,
                             },
                         )            
                     g.start()
@@ -2076,9 +2165,6 @@ def _osascript(script: str) -> bool:
 def focus_roblox():
     _osascript('tell application "Roblox" to activate')
     time.sleep(0.2)
-
-# Loss Detector
-Thread(target=detect_loss, daemon=True).start()
 
 # Auto-start logic stays the same
 if Settings.AUTO_START:

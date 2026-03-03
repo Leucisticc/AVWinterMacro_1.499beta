@@ -5,6 +5,9 @@
     "WAVE_RESTART_150": false,
     "USE_NIMBUS": true,
     "AUTO_START": true,
+    "ENABLE_WEBHOOKS": true,
+    "ENABLE_FAILURE_PING": true,
+    "FAILURE_PING_TEXT": "@everyone",
     "CTM_P1_P2": false,
     "CTM_AREA_1": [
         [
@@ -136,7 +139,7 @@
                     583
                 ],
                 [
-                    681,
+                    686,
                     498
                 ]
             ],

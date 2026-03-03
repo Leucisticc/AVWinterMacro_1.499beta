@@ -89,6 +89,8 @@ def send_webhook(
     win: int | None = None,
     lose: int | None = None,
     rewards: int | None = None,
+    enabled: bool = True,
+    alert_text: str | None = None,
 ):
     """
     Backward compatible with the current project call:
@@ -97,6 +99,10 @@ def send_webhook(
     Also supports the attached WebhookManager-style call:
       send_webhook(run_time=..., win=..., lose=..., task_name=..., img=...)
     """
+    if not enabled:
+        print("[webhook] disabled by settings")
+        return False
+
     if not webhook_url or "put your url" in webhook_url.lower():
         print("[webhook] webhook_url is not configured")
         return False
@@ -129,6 +135,8 @@ def send_webhook(
             }
         ],
     }
+    if alert_text:
+        payload["content"] = str(alert_text)
 
     # Discord rejects null embed keys sometimes; remove image if no screenshot.
     embed = payload["embeds"][0]
