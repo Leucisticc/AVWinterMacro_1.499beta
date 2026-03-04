@@ -5,9 +5,6 @@ import sys
 import os
 import subprocess
 import json
-import re
-import ssl
-from urllib.request import Request, urlopen
 
 from Tools import botTools as bt
 from Tools import winTools as wt
@@ -30,9 +27,6 @@ WE_Json = os.path.join(Settings_Path,"Winter_Event.json")
 
 VERSION_N = '1.6.31'
 print(f"Version: {VERSION_N}")
-
-UPDATE_OWNER = "Leucisticc"
-UPDATE_REPO = "AVWinterMacro_Beta"
 
 CHECK_LOOTBOX = False # Leave false for faster runs
 NAMI_PLACE_TIMEOUT_SECONDS = 50
@@ -96,104 +90,6 @@ def reset_runtime_stats():
     save_json_data(data)
 
 
-def _normalize_version(version_text: str):
-    text = (version_text or "").strip().lower()
-    nums = [int(x) for x in re.findall(r"\d+", text)]
-    nums = (nums + [0, 0, 0])[:3]
-
-    if "alpha" in text:
-        stage = 0
-    elif "beta" in text:
-        stage = 1
-    elif "rc" in text:
-        stage = 2
-    else:
-        stage = 3
-    return (nums[0], nums[1], nums[2], stage)
-
-def _ssl_context():
-    """
-    Prefer certifi CA bundle when available (helps some macOS Python installs).
-    """
-    try:
-        import certifi
-        return ssl.create_default_context(cafile=certifi.where())
-    except Exception:
-        return ssl.create_default_context()
-
-def _local_app_version() -> str:
-    """
-    Source local version from version.json first, then fall back to VERSION_N.
-    """
-    version_path = Path(__file__).resolve().parent / "version.json"
-    try:
-        if version_path.exists():
-            data = json.loads(version_path.read_text(encoding="utf-8"))
-            v = str(data.get("version", "")).strip()
-            if v:
-                return v
-    except Exception:
-        pass
-    return str(VERSION_N).strip()
-
-
-def _remote_release_version() -> str | None:
-    try:
-        url = f"https://api.github.com/repos/{UPDATE_OWNER}/{UPDATE_REPO}/releases/latest"
-        req = Request(
-            url,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "User-Agent": "WinterEventVersionCheck",
-            },
-        )
-        with urlopen(req, timeout=8, context=_ssl_context()) as response:
-            data = json.loads(response.read().decode("utf-8"))
-        return str(data.get("tag_name", "")).lstrip("v").strip() or None
-    except Exception as e:
-        print(f"[Update] Could not check latest release: {e}")
-        return None
-
-
-def _prompt_update_if_outdated():
-    """
-    Warns users when local VERSION_N is older than latest GitHub release.
-    Offers to launch Utility/FileCheck.py.
-    """
-    local_ver = _local_app_version()
-    remote_ver = _remote_release_version()
-    if not remote_ver:
-        print(f"[Update] Skipping version gate (remote unavailable). Local: {local_ver}")
-        return
-
-    if _normalize_version(remote_ver) <= _normalize_version(local_ver):
-        return
-
-    print(f"\n[Update] Your file is outdated.")
-    print(f"[Update] Latest: {remote_ver} | Local: {local_ver}")
-    try:
-        run_update = input("[Update] Run Utility/FileCheck.py now? [Y/N] > ").strip().lower()
-    except EOFError:
-        run_update = "n"
-
-    if run_update != "y":
-        try:
-            continue_anyway = input("[Update] Continue anyway on outdated version? [Y/N] > ").strip().lower()
-        except EOFError:
-            continue_anyway = "y"
-        if continue_anyway != "y":
-            print("[Update] Exiting. Please update and relaunch.")
-            sys.exit(0)
-        print("[Update] Continuing on outdated version by user choice.")
-        return
-
-    file_check_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Utility", "FileCheck.py")
-    try:
-        subprocess.run([sys.executable, file_check_path], check=False)
-    except Exception as e:
-        print(f"[Update] Failed to start FileCheck.py: {e}")
-    sys.exit(0)
-
 if os.path.exists(Settings_Path):
     if os.path.exists(WE_Json):
         data = load_json_data()
@@ -237,8 +133,6 @@ else:
     Settings.FAILURE_PING_TEXT = str(Settings.FAILURE_PING_TEXT or "").strip()
 
 Settings.Units_Placeable.append("Doom")
-
-_prompt_update_if_outdated()
 
 start = datetime.now()
 if not USE_KAGUYA:
