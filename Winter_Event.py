@@ -25,7 +25,7 @@ Settings = Cur_Settings()
 Settings_Path = os.path.join(os.path.dirname(os.path.abspath(__file__)),"Settings")
 WE_Json = os.path.join(Settings_Path,"Winter_Event.json")
 
-VERSION_N = '1.6.52'
+VERSION_N = '1.6.54'
 print(f"Version: {VERSION_N}")
 
 CHECK_LOOTBOX = False # Leave false for faster runs
@@ -33,7 +33,9 @@ PLACEMENT_TIMEOUT_SECONDS = 50
 
 ROBLOX_PLACE_ID = 16146832113
 
-PRIVATE_SERVER_CODE = "74897279689808909151980589387297" # Not in settings so u dont accidently share ur ps lol
+PRIVATE_SERVER_CODE = "" # Not in settings so u dont accidently share ur ps lol
+
+WEBHOOK_CHECKER = False #Set to True if you want to send a webhook every time you run it
 
 USE_KAGUYA = False # "its faster to lowkey not use kaguya lol" ~LoxerEx
 
@@ -1586,6 +1588,8 @@ def main():
                 
             Settings.Unit_Placements_Left = Reset_Placements.copy()
             
+            while not avM.get_wave() == 0:
+                avM.restart_match()
             wait_start()
             quick_rts()
             time.sleep(2)
@@ -1711,9 +1715,14 @@ def main():
             #DIR_NAMICARD
             if bt.does_exist("Winter/Nami_detect.png",confidence=0.8,grayscale=True):
                 print("Detected Nami.")
-                click_image_center("Winter/Nami_detect.png",confidence=0.8,grayscale=True,offset=(0,0))   
+                click_image_center("Winter/Nami_detect.png",confidence=0.8,grayscale=True,offset=(0,0))
+                time.sleep(0.5)
+                click(Settings.CTM_NAMI_CARD[0], Settings.CTM_NAMI_CARD[1], delay =0.2)
+                time.sleep(0.5) 
                 click(50,50,delay=0.1,right_click=True,dont_move=True)
             else:
+                click(Settings.CTM_NAMI_CARD[0], Settings.CTM_NAMI_CARD[1], delay =0.2)
+                time.sleep(0.5)
                 click(Settings.CTM_NAMI_CARD[0], Settings.CTM_NAMI_CARD[1], delay =0.1, right_click=True) # Goes to nami's card
             time.sleep(7)
             # Nami (timeout-safe): if not placed quickly, treat as failed run and restart.
