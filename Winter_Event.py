@@ -25,7 +25,7 @@ Settings = Cur_Settings()
 Settings_Path = os.path.join(os.path.dirname(os.path.abspath(__file__)),"Settings")
 WE_Json = os.path.join(Settings_Path,"Winter_Event.json")
 
-VERSION_N = '1.6.54'
+VERSION_N = '1.6.55'
 print(f"Version: {VERSION_N}")
 
 CHECK_LOOTBOX = False # Leave false for faster runs
@@ -293,6 +293,16 @@ def wait_for_pixel(x: int,y: int,rgb: tuple[int, int, int],tol: int = 20,timeout
     return False
 
 def setup_cam():
+    focus_roblox()
+    time.sleep(1)
+    press('i')
+    time.sleep(0.5)
+    release('i')
+    time.sleep(0.5)
+    press('o')
+    time.sleep(1)
+    release('o')
+    time.sleep(0.5)
     quick_rts()
     time.sleep(0.5)
     press('a')
@@ -491,21 +501,14 @@ def on_disconnect():
     time.sleep(10)
     wait_start()
     click(835, 226, delay =0.1) # Start Match
-    press('i')
-    time.sleep(0.5)
-    release('i')
-    time.sleep(0.5)
-    press('o')
-    time.sleep(1)
-    release('o')
+    setup_cam()
     time.sleep(0.5)
     click(483, 536, delay=0.2)
     time.sleep(1)
     click(405,160,delay=0.2)
-    time.sleep(0.5)
+    time.sleep(1)
     click(405,160,delay=0.2)
-    time.sleep(0.5)
-    setup_cam()
+    time.sleep(1)
     avM.restart_match()
     
 # Wait for start screen
@@ -1536,23 +1539,24 @@ def main():
     startup_losses = int(startup_stats.get("losses", 0) or 0)
     # print(f"[Stats] Starting totals | Runs: {startup_total} | Wins: {startup_wins} | Losses: {startup_losses}")
     if Settings.ENABLE_WEBHOOKS:
-        try:
-            startup_img = _roblox_window_screenshot_for_webhook()
-            Thread(
-                target=webhook.send_webhook,
-                kwargs={
-                    "run_time": "0:00:00",
-                    "num_runs": startup_total,
-                    "win": startup_wins,
-                    "lose": startup_losses,
-                    "task_name": "Winter Event (Started)",
-                    "img": startup_img,
-                    "enabled": Settings.ENABLE_WEBHOOKS,
-                },
-                daemon=True,
-            ).start()
-        except Exception as e:
-            print(f"[Webhook] Startup webhook error: {e}")
+        if WEBHOOK_CHECKER:
+            try:
+                startup_img = _roblox_window_screenshot_for_webhook()
+                Thread(
+                    target=webhook.send_webhook,
+                    kwargs={
+                        "run_time": "0:00:00",
+                        "num_runs": startup_total,
+                        "win": startup_wins,
+                        "lose": startup_losses,
+                        "task_name": "Winter Event (Started)",
+                        "img": startup_img,
+                        "enabled": Settings.ENABLE_WEBHOOKS,
+                    },
+                    daemon=True,
+                ).start()
+            except Exception as e:
+                print(f"[Webhook] Startup webhook error: {e}")
     else:
         print("[Webhook] Disabled by settings (ENABLE_WEBHOOKS=false)")
     session_runs = 0
@@ -1647,54 +1651,6 @@ def main():
             click(607, 381, delay =0.1)
             
             # Tak's placement + max
-            
-            # time.sleep(1)
-            # click(754,418,delay=0.2,right_click=True)
-            # if bt.does_exist("Winter/Tak_Detect.png", confidence=0.7, grayscale=True):
-            #     clicked = False
-
-            #     # try up to 6 times (fast), then fall back
-            #     for _ in range(6):
-            #         ok = click_image_center("Winter/Tak_Detect.png",confidence=0.7,grayscale=True,offset=(0, -20))
-            #         if ok:
-            #             clicked = True
-            #             break
-            #         time.sleep(0.15)
-
-            #     if clicked:
-            #         click(50, 50, delay=0.1, right_click=True, dont_move=True)
-            #     else:
-            #         print("[Tak_Detect] Saw image but click failed -> fallback movement")
-            #         press('w')
-            #         time.sleep(Settings.TAK_W_DELAY)
-            #         release('w')
-            # else:
-            #         print("[Tak_Detect] Saw image but click failed -> fallback movement")
-            #         press('w')
-            #         time.sleep(Settings.TAK_W_DELAY)
-            #         release('w')
-
-            # if TAK_FINDER:
-            #     path_tak = False
-            #     while not path_tak:
-            #         press('w')
-            #         time.sleep(0.1)
-            #         release('w')
-            #         tap('e')
-            #         time.sleep(0.4)
-            #         if bt.does_exist('Winter/TakDetect.png', confidence=0.7, grayscale=True,region=(581, 676, 958, 752)) or  bt.does_exist('Winter/Tak_hb.png', confidence=0.7, grayscale=False):
-            #             path_tak = True
-            #         time.sleep(0.5)
-            # Press e until tak is bought
-            # while not bt.does_exist('Winter/Tak_hb.png', confidence=0.7, grayscale=False):
-            #     tap('e')
-            #     time.sleep(0.5)
-            
-            # place_unit("Tak", Settings.Unit_Positions.get("tak"))
-            # tap('z')
-            # time.sleep(0.5)
-            # click(607, 381, delay =1)
-            # time.sleep(1)
             
             time.sleep(1)
             click(760,375,delay=0.2,right_click=True) # Goes to Tak's card
@@ -2418,6 +2374,14 @@ if Settings.AUTO_START:
 for z in range(3):
     print(f"Starting in {3 - z}")
     time.sleep(1)
+
+if not bt.does_exist("Winter/Camera_Angled.png",confidence=0.9,grayscale=False):
+    auto_camera_angle = input("Automatically set up your camera? [Y/N] > ").strip().lower()
+    if auto_camera_angle == "y":
+        setup_cam()
+        print("Camera Setup")
+    else:
+        print("Camera may be out of position. Set it up manually if it breaks.")
 
 # ✅ Focus Roblox once before any clicks/keys
 focus_roblox()
