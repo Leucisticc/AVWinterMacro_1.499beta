@@ -12,7 +12,7 @@ from Tools import avMethods as avM
 
 
 from datetime import datetime
-from threading import Thread
+from threading import Thread, local
 from pynput import keyboard as pynput_keyboard
 from pynput.keyboard import Controller
 from pathlib import Path
@@ -25,7 +25,7 @@ Settings = Cur_Settings()
 Settings_Path = os.path.join(os.path.dirname(os.path.abspath(__file__)),"Settings")
 WE_Json = os.path.join(Settings_Path,"Winter_Event.json")
 
-VERSION_N = '1.6.55'
+VERSION_N = '1.6.60'
 print(f"Version: {VERSION_N}")
 
 CHECK_LOOTBOX = False # Leave false for faster runs
@@ -58,6 +58,9 @@ pyautogui.FAILSAFE = False
 pyautogui.PAUSE = 0
 keyboard_controller = Controller()
 g_toggle = False
+total_screenshot_count = 0
+_screenshot_count_guard = local()
+_screenshot_counter_installed = False
 
 # Info_Path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Info.json")
 
@@ -82,6 +85,21 @@ def _to_bool(value, default=False):
         return value.strip().lower() in {"1", "true", "yes", "y", "on"}
     return default
 
+def _sanitize_disconnect_interval(value, default=30.0):
+    """
+    Keep disconnect polling as a fixed positive number of seconds.
+    Backward compatible with old [min, max] format by using the first value.
+    """
+    try:
+        if isinstance(value, (list, tuple)) and len(value) >= 1:
+            value = value[0]
+        interval = float(value)
+        if interval > 0:
+            return interval
+    except Exception:
+        pass
+    return default
+
 def reset_runtime_stats():
     """
     Reset run counters at script startup so stats are session-only.
@@ -92,6 +110,49 @@ def reset_runtime_stats():
     data["losses"] = 0
     data["runtime"] = "0:00:00"
     save_json_data(data)
+
+def _install_global_screenshot_counter():
+    """
+    Count every screenshot capture globally across pyautogui/pyscreeze.
+    Uses a thread-local guard to avoid double counting nested calls.
+    """
+    global _screenshot_counter_installed
+    if _screenshot_counter_installed:
+        return
+
+    original_pyautogui_screenshot = pyautogui.screenshot
+
+    try:
+        import pyscreeze
+    except Exception:
+        pyscreeze = None
+
+    original_pyscreeze_screenshot = getattr(pyscreeze, "screenshot", None) if pyscreeze else None
+
+    def _wrap_screenshot(fn):
+        def _wrapped(*args, **kwargs):
+            if getattr(_screenshot_count_guard, "active", False):
+                return fn(*args, **kwargs)
+
+            setattr(_screenshot_count_guard, "active", True)
+            try:
+                img = fn(*args, **kwargs)
+                global total_screenshot_count
+                total_screenshot_count += 1
+                if Settings.PRINT_GLOBAL_SCREENSHOT_COUNT:
+                    print(f"[Screenshot] Total captured: {total_screenshot_count}")
+                return img
+            finally:
+                setattr(_screenshot_count_guard, "active", False)
+
+        return _wrapped
+
+    pyautogui.screenshot = _wrap_screenshot(original_pyautogui_screenshot)
+
+    if pyscreeze is not None and callable(original_pyscreeze_screenshot):
+        pyscreeze.screenshot = _wrap_screenshot(original_pyscreeze_screenshot)
+
+    _screenshot_counter_installed = True
 
 
 if os.path.exists(Settings_Path):
@@ -135,6 +196,48 @@ if not hasattr(Settings, "ALERT_TARGET"):
     save_json_data(data)
 else:
     Settings.ALERT_TARGET = str(Settings.ALERT_TARGET or "").strip() or "@everyone"
+
+if not hasattr(Settings, "ENABLE_DISCONNECT_CHECKER"):
+    Settings.ENABLE_DISCONNECT_CHECKER = True
+    data = load_json_data() or {}
+    data["ENABLE_DISCONNECT_CHECKER"] = True
+    save_json_data(data)
+else:
+    Settings.ENABLE_DISCONNECT_CHECKER = _to_bool(Settings.ENABLE_DISCONNECT_CHECKER, default=True)
+
+if not hasattr(Settings, "DISCONNECT_CHECK_INTERVAL_SECONDS"):
+    Settings.DISCONNECT_CHECK_INTERVAL_SECONDS = 30
+    data = load_json_data() or {}
+    data["DISCONNECT_CHECK_INTERVAL_SECONDS"] = 30
+    save_json_data(data)
+
+Settings.DISCONNECT_CHECK_INTERVAL_SECONDS = _sanitize_disconnect_interval(
+    getattr(Settings, "DISCONNECT_CHECK_INTERVAL_SECONDS", 30)
+)
+
+if hasattr(Settings, "PRINT_DISCONNECT_SCREENSHOT_COUNT") and not hasattr(Settings, "PRINT_GLOBAL_SCREENSHOT_COUNT"):
+    # Backward compatibility for older config key name.
+    Settings.PRINT_GLOBAL_SCREENSHOT_COUNT = _to_bool(
+        Settings.PRINT_DISCONNECT_SCREENSHOT_COUNT,
+        default=False
+    )
+    data = load_json_data() or {}
+    data["PRINT_GLOBAL_SCREENSHOT_COUNT"] = Settings.PRINT_GLOBAL_SCREENSHOT_COUNT
+    data.pop("PRINT_DISCONNECT_SCREENSHOT_COUNT", None)
+    save_json_data(data)
+
+if not hasattr(Settings, "PRINT_GLOBAL_SCREENSHOT_COUNT"):
+    Settings.PRINT_GLOBAL_SCREENSHOT_COUNT = False
+    data = load_json_data() or {}
+    data["PRINT_GLOBAL_SCREENSHOT_COUNT"] = False
+    save_json_data(data)
+else:
+    Settings.PRINT_GLOBAL_SCREENSHOT_COUNT = _to_bool(
+        Settings.PRINT_GLOBAL_SCREENSHOT_COUNT,
+        default=False
+    )
+
+_install_global_screenshot_counter()
 
 Settings.Units_Placeable.append("Doom")
 
@@ -352,7 +455,7 @@ def safe_restart():
 
 def _show_disconnect_alert():
     """
-    Best-effort macOS alert to make disconnects obvious while the script auto-recovers.
+    Best-effort macOS alert to makew disconnects obvious while the script auto-recovers.
     """
     title = "Winter Event Macro"
     body = "Disconnected detected. Rejoining private server."
@@ -384,10 +487,14 @@ def _show_disconnect_alert():
 def disconnect_checker():
     time.sleep(10)  # initial detect delay
     while True:
+        if not Settings.ENABLE_DISCONNECT_CHECKER:
+            time.sleep(5)
+            continue
+
         disconnected = (
-            bt.does_exist("Disconnected.png", confidence=0.9, grayscale=True, region=(525, 353, 972, 646))
-            or bt.does_exist("Disconnect_Two.png", confidence=0.9, grayscale=True, region=(525, 353, 972, 646))
-            or bt.does_exist("Disconnect_Three.png", confidence=0.9, grayscale=True, region=(525, 353, 972, 646))
+            bt.does_exist("Disconnected.png", confidence=0.9, grayscale=True, region=(512, 354, 450, 322))
+            or bt.does_exist("Disconnect_Two.png", confidence=0.9, grayscale=True, region=(512, 354, 450, 322))
+            or bt.does_exist("Disconnect_Three.png", confidence=0.9, grayscale=True, region=(512, 354, 450, 322))
         )
 
         if disconnected:
@@ -408,7 +515,7 @@ def disconnect_checker():
 
             time.sleep(6)
 
-        time.sleep(1)
+        time.sleep(Settings.DISCONNECT_CHECK_INTERVAL_SECONDS)
 
 def on_disconnect():
     """
@@ -2361,7 +2468,10 @@ def focus_roblox():
 if "--restart" in sys.argv:
     on_disconnect()
 
-Thread(target=disconnect_checker, daemon=True).start()
+if Settings.ENABLE_DISCONNECT_CHECKER:
+    Thread(target=disconnect_checker, daemon=True).start()
+else:
+    print("[Disconnect] Checker disabled via settings.")
 # print(f"Launched with args {sys.argv}")
 
 # Auto-start logic stays the same
@@ -2375,13 +2485,13 @@ for z in range(3):
     print(f"Starting in {3 - z}")
     time.sleep(1)
 
-if not bt.does_exist("Winter/Camera_Angled.png",confidence=0.9,grayscale=False):
-    auto_camera_angle = input("Automatically set up your camera? [Y/N] > ").strip().lower()
-    if auto_camera_angle == "y":
-        setup_cam()
-        print("Camera Setup")
-    else:
-        print("Camera may be out of position. Set it up manually if it breaks.")
+# if not bt.does_exist("Winter/Camera_Angled.png",confidence=0.9,grayscale=False):
+#     auto_camera_angle = input("Automatically set up your camera? [Y/N] > ").strip().lower()
+#     if auto_camera_angle == "y":
+#         setup_cam()
+#         print("Camera Setup")
+#     else:
+#         print("Camera may be out of position. Set it up manually if it breaks.")
 
 # ✅ Focus Roblox once before any clicks/keys
 focus_roblox()

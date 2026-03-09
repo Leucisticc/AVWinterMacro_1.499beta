@@ -5,9 +5,7 @@ import time
 from typing import Any
 
 import requests
-
-
-webhook_url = "YOUR_URL_HERE"
+webhook_url = 'YOUR_URL_HERE'
 WEBHOOK_MAX_RETRIES = 3
 WEBHOOK_TIMEOUT_SECONDS = 15
 

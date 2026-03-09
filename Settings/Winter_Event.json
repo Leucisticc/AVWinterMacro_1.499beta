@@ -7,6 +7,9 @@
     "AUTO_START": true,
     "ENABLE_WEBHOOKS": true,
     "ENABLE_FAILURE_PING": true,
+    "ENABLE_DISCONNECT_CHECKER": true,
+    "DISCONNECT_CHECK_INTERVAL_SECONDS": 60,
+    "PRINT_GLOBAL_SCREENSHOT_COUNT": false,
     "ALERT_TARGET": "@everyone",
     "CTM_P1_P2": false,
     "CTM_AREA_1": [
