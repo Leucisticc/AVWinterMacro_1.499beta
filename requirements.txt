@@ -8,5 +8,4 @@ pynput==1.8.1
 pyobjc_framework_quartz==12.1
 pyscreeze==1.0.1
 PyWinCtl==0.4.1
-Quartz==0.0.1.dev0
 Requests==2.32.5
